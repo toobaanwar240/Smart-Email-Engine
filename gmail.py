@@ -72,7 +72,7 @@ def authenticate_gmail():
                 # Not logged in yet → show login button
                 auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
                 st.markdown(
-                    f'<a href="{auth_url}" target="_self">'  # open in a new tab instead of the same window
+                    f'<a href="{auth_url}" target="_blank">'  # open in a new tab instead of the same window
                     '<button style="padding:8px 16px;background-color:#4285F4;color:white;border:none;border-radius:4px;">'
                     'Login with Gmail</button></a>',
                     unsafe_allow_html=True,
