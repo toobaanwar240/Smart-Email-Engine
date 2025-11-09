@@ -42,8 +42,8 @@ def authenticate_gmail():
             # Detect environment - FIXED VERSION
             try:
                 # Check if we're in Streamlit Cloud
-                if st.runtime.scriptrunner.is_running_on_streamlit_cloud:
-                    redirect_uri = "https://mailsense.streamlit.app/"
+               if 'STREAMLIT_SHARING' in os.environ or 'STREAMLIT_SERVER' in os.environ:
+                    redirect_uri = os.environ.get('STREAMLIT_REDIRECT_URI', 'https://mailsense.streamlit.app/')
                 else:
                     redirect_uri = "http://localhost:8501/"
             except:
@@ -66,13 +66,13 @@ def authenticate_gmail():
             flow.redirect_uri = redirect_uri
 
             # --- 3. Handle redirect automatically ---
-            query_params = st.query_params
+             query_params = st.experimental_get_query_params()
 
             if "code" not in query_params:
                 # Not logged in yet → show login button
                 auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
                 st.markdown(
-                    f'<a href="{auth_url}" target="_blank">'  # open in a new tab instead of the same window
+                    f'<a href="{auth_url}" target="_self">'  # open in a new tab instead of the same window
                     '<button style="padding:8px 16px;background-color:#4285F4;color:white;border:none;border-radius:4px;">'
                     'Login with Gmail</button></a>',
                     unsafe_allow_html=True,
