@@ -18,12 +18,11 @@ load_dotenv()
 # Define the Gmail/Calendar scopes
 SCOPES = [
     "openid",
-    "https://www.googleaps.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/calendar.events",
-    "openid",
 ]
 
 
@@ -44,58 +43,94 @@ def authenticate_gmail():
                 creds.refresh(Request())
                 st.session_state["creds"] = creds
                 return creds
-            except Exception as e:
-                st.warning(f"Session expired. Please login again: {e}")
+            except:
+                pass  # Will re-authenticate below
 
-    # --- 2. OAuth client configuration ---
-    client_id = st.secrets["google"]["client_id"]
-    client_secret = st.secrets["google"]["client_secret"]
-    redirect_uri = st.secrets["google"]["redirect_uri"]  # Cloud URL
-
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri],
-            }
-        },
-        scopes=SCOPES,
-    )
-    flow.redirect_uri = redirect_uri
-
-    # --- 3. Handle redirect from Google ---
-    query_params = st.experimental_get_query_params()
-    if "code" in query_params:
-        try:
-            code = query_params["code"][0]
-            flow.fetch_token(code=code)
-            creds = flow.credentials
+    # --- 2. Load existing token if available (local only) ---
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        if creds and creds.valid:
             st.session_state["creds"] = creds
+            return creds
 
-            # Clear URL query params to avoid repeated login
-            st.experimental_set_query_params()
-            st.experimental_rerun()
-        except Exception as e:
-            st.error(f"Authentication failed: {e}")
-            st.stop()
+    # --- 3. If no valid credentials, start OAuth flow ---
+    if not creds or not creds.valid:
+        # Get credentials
+        client_id = st.secrets["google"]["client_id"]
+        client_secret = st.secrets["google"]["client_secret"]
 
-    # --- 4. Show login button if not authenticated ---
-    else:
-        auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-        st.markdown(
-            f'<a href="{auth_url}" target="_self">'
-            '<button style="padding:10px 20px;background-color:#4285F4;color:white;'
-            'border:none;border-radius:4px;font-size:16px;cursor:pointer;">'
-            '🔐 Login with Google</button></a>',
-            unsafe_allow_html=True,
+        # Detect environment - FIXED VERSION
+        redirect_uri = "http://localhost:8501/"  # default for local
+        
+        # Check if running on Streamlit Cloud
+        if st.secrets.get("env") == "cloud":
+          redirect_uri = "https://mailsense.streamlit.app/"
+        else:
+          redirect_uri = "http://localhost:8501/"
+              
+        # Method 2: Check for Streamlit Cloud environment variable
+        if os.getenv("STREAMLIT_SHARING_MODE") or os.getenv("IS_STREAMLIT_CLOUD"):
+            redirect_uri = "https://mailsense.streamlit.app/"
+        
+        # Method 3: Force cloud URL if secrets are from Streamlit Cloud
+        # (Streamlit Cloud always has secrets, local might use .env)
+        try:
+            if hasattr(st, 'secrets') and 'google' in st.secrets:
+                # If we can access st.secrets, we might be on cloud
+                # You can add a flag in secrets to indicate cloud
+                redirect_uri = st.secrets.get("redirect_uri", redirect_uri)
+        except:
+            pass
+
+        # Initialize OAuth flow
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [redirect_uri],
+                }
+            },
+            scopes=SCOPES,
         )
-        st.stop()
+        flow.redirect_uri = redirect_uri
 
-    return st.session_state.get("creds")
+        # --- 4. Handle redirect automatically ---
+        query_params = st.query_params
 
+        if "code" not in query_params:
+            # Not logged in yet → show login button
+            auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+            st.markdown(
+                f'<a href="{auth_url}" target="_self">'
+                '<button style="padding:8px 16px;background-color:#4285F4;color:white;border:none;border-radius:4px;">'
+                'Login with Gmail</button></a>',
+                unsafe_allow_html=True,
+            )
+            st.stop()
+        else:
+            # User returned from Google with ?code=...
+            auth_code = query_params["code"]
+            flow.fetch_token(code=auth_code)
+            creds = flow.credentials
+
+            # Save to session state (persists during session)
+            st.session_state["creds"] = creds
+            
+            # Save to file (for local development only)
+            try:
+                with open("token.json", "w") as token_file:
+                    token_file.write(creds.to_json())
+            except:
+                pass  # File system might be read-only on cloud
+
+            st.success("✅ Logged in successfully!")
+            st.query_params.clear()  # clean up URL
+            st.rerun()
+
+    return creds
     
 def get_gmail_service():
     """Return Gmail API service object"""
