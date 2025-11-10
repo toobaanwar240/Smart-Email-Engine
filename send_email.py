@@ -56,11 +56,25 @@ def get_mime_message(service, user_id, msg_id):
 
 def get_email_content(mime_msg):
     """
-    Extracts the body content from a MIME message.
+    Extracts the body content from a MIME message safely.
+    Handles different encodings & avoids UnicodeDecodeError.
     Returns plain text if available, otherwise HTML.
     """
+    def safe_decode(part):
+        payload = part.get_payload(decode=True)
+        if payload:
+            # Detect declared charset if available
+            charset = part.get_content_charset()
+            if charset:
+                try:
+                    return payload.decode(charset, errors="replace")
+                except:
+                    pass
+            # Fallback to UTF-8 safe decode
+            return payload.decode("utf-8", errors="replace")
+        return ""
+
     if mime_msg.is_multipart():
-        # Multipart email (may contain text + HTML + attachments)
         for part in mime_msg.walk():
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition"))
@@ -69,17 +83,19 @@ def get_email_content(mime_msg):
             if "attachment" in content_disposition:
                 continue
 
-            # Get text/plain
+            # Prefer plain text
             if content_type == "text/plain":
-                return part.get_payload(decode=True).decode()
-            
-            # Fallback: get HTML if text/plain not found
-            if content_type == "text/html":
-                return part.get_payload(decode=True).decode()
-    else:
-        # Not multipart (just plain text or HTML)
-        content_type = mime_msg.get_content_type()
-        if content_type == "text/plain" or content_type == "text/html":
-            return mime_msg.get_payload(decode=True).decode()
+                return safe_decode(part)
 
-    return None
+        # Fallback: try HTML
+        for part in mime_msg.walk():
+            if part.get_content_type() == "text/html":
+                return safe_decode(part)
+
+    else:
+        # Email is not multipart
+        content_type = mime_msg.get_content_type()
+        if content_type in ["text/plain", "text/html"]:
+            return safe_decode(mime_msg)
+
+    return ""
