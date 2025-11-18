@@ -48,6 +48,7 @@ def authenticate_gmail():
                 pass  # Will re-authenticate below
 
     # --- 2. Load existing token if available (local only) ---
+    creds = None  # ⭐ CHANGED: Initialize creds to None
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
         if creds and creds.valid:
@@ -56,19 +57,23 @@ def authenticate_gmail():
 
     # --- 3. If no valid credentials, start OAuth flow ---
     if not creds or not creds.valid:
-        # Get credentials
-        client_id = st.secrets["google"]["client_id"]
-        client_secret = st.secrets["google"]["client_secret"]
+        # ⭐ CHANGED: Get credentials from Streamlit secrets (not hardcoded "google")
+        client_id = st.secrets["gmail"]["client_id"]
+        client_secret = st.secrets["gmail"]["client_secret"]
 
-        # Detect environment - FIXED VERSION
-        redirect_uri = "http://localhost:8501"  # default for local
+        # ⭐ CHANGED: Simplified environment detection
+        # Check if running on Streamlit Cloud by looking for streamlit hostname
+        try:
+            import socket
+            hostname = socket.gethostname()
+            is_cloud = "streamlit" in hostname.lower() or st.secrets.get("env") == "cloud"
+        except:
+            is_cloud = False
         
-        # Check if running on Streamlit Cloud
-        if st.secrets.get("env") == "cloud":
-          redirect_uri = "https://mailsense.streamlit.app/oauth2callback"
+        if is_cloud:
+            redirect_uri = "https://mailsense.streamlit.app"
         else:
-          redirect_uri = "http://localhost:8501"
-              
+            redirect_uri = "http://localhost:8501"
 
         # Initialize OAuth flow
         flow = Flow.from_client_config(
